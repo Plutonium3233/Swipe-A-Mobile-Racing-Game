@@ -13,207 +13,219 @@
 
 <style>
 html, body {
-  margin: 0;
-  padding: 0;
-  background: #111;
-  overflow: hidden;
-  touch-action: none;
-  font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #111;
+    overflow: hidden;
+    touch-action: none;
+    font-family: Arial, sans-serif;
 }
 canvas { display: block; }
-
-#overlay, #install {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  background: rgba(0,0,0,0.7);
-  color: white;
-  z-index: 10;
-}
-
-#install {
-  font-size: 20px;
-  padding: 30px;
-  display: none;
+#overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    font-size: 28px;
+    text-align: center;
+    z-index: 10;
 }
 </style>
 </head>
 <body>
 
 <canvas id="game"></canvas>
-
-<div id="overlay">
-  Swipe left & right to steer<br><br>
-  Tap to start
-</div>
-
-<div id="install">
-  📲 Install Swipe Racer<br><br>
-  1️⃣ Tap the <strong>Share</strong> button<br>
-  2️⃣ Tap <strong>Add to Home Screen</strong><br><br>
-  Tap anywhere to close
-</div>
+<div id="overlay">Swipe left & right to steer<br><br>Tap to start</div>
 
 <script>
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js");
-}
-
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
-const install = document.getElementById("install");
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 }
 resize();
 window.addEventListener("resize", resize);
 
-// Show install hint once (Safari only)
-if (!window.matchMedia('(display-mode: standalone)').matches) {
-  setTimeout(() => install.style.display = "flex", 3000);
-}
-install.onclick = () => install.style.display = "none";
-
-// ---- Audio (Engine) ----
-let audioCtx, engineOsc, gain;
-function startEngine() {
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  engineOsc = audioCtx.createOscillator();
-  gain = audioCtx.createGain();
-  engineOsc.type = "sawtooth";
-  engineOsc.frequency.value = 80;
-  gain.gain.value = 0.05;
-  engineOsc.connect(gain).connect(audioCtx.destination);
-  engineOsc.start();
-}
-function updateEngine(speed) {
-  if (engineOsc) engineOsc.frequency.value = 80 + speed * 6;
-}
-
-// ---- Game ----
+// ===== CONSTANTS =====
 const ROAD_WIDTH = 240;
-const PLAYER_SPEED = 7;
+const PLAYER_SPEED = 7;          // forward motion speed
 const FINISH_DISTANCE = 4000;
 
-const player = { w: 42, h: 70, x: 0, y: 0 };
-let running = false, distance = 0;
-let obstacles = [], trees = [];
-let touchX = null, dashOffset = 0;
-
-player.y = canvas.height - 120;
-player.x = canvas.width / 2;
-
-const colors = ["red","green","orange","purple","gray","white"];
-const rand = a => a[Math.floor(Math.random()*a.length)];
-const rr = (a,b)=>a+Math.random()*(b-a);
-
-overlay.onclick = () => {
-  overlay.style.display="none";
-  running = true;
-  distance = 0;
-  obstacles = [];
-  trees = [];
-  startEngine();
+// ===== PLAYER =====
+const player = {
+    w: 42,
+    h: 70,
+    x: canvas.width / 2,
+    y: canvas.height - 120
 };
 
-canvas.addEventListener("touchstart", e => touchX = e.touches[0].clientX);
+// ===== STATE =====
+let running = false;
+let distance = 0;
+let obstacles = [];
+let trees = [];
+let touchX = null;
+
+// ===== UTILS =====
+const trafficColors = ["red", "green", "orange", "purple", "gray", "white"];
+const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+const randRange = (a, b) => a + Math.random() * (b - a);
+
+// ===== START =====
+overlay.onclick = () => {
+    running = true;
+    distance = 0;
+    obstacles = [];
+    trees = [];
+    player.x = canvas.width / 2;
+    overlay.style.display = "none";
+};
+
+// ===== TOUCH =====
+canvas.addEventListener("touchstart", e => {
+    touchX = e.touches[0].clientX;
+});
 canvas.addEventListener("touchmove", e => {
-  if(!running) return;
-  let dx = e.touches[0].clientX - touchX;
-  player.x += dx*0.8;
-  touchX = e.touches[0].clientX;
+    if (!running) return;
+    let dx = e.touches[0].clientX - touchX;
+    player.x += dx * 0.8;
+    touchX = e.touches[0].clientX;
 });
 
-function spawnObstacle(){
-  const left = canvas.width/2-ROAD_WIDTH/2;
-  obstacles.push({
-    w:40,h:Math.random()>0.5?60:40,
-    x:left+Math.random()*(ROAD_WIDTH-40),
-    y:-80,
-    speed:rr(-2,4),
-    color:rand(colors)
-  });
+// ===== SPRITES =====
+function drawPlayer(x, y) {
+    ctx.fillStyle = "#1e90ff"; // blue pickup
+    ctx.fillRect(x, y, player.w, player.h);
+    ctx.fillStyle = "#0b3d91";
+    ctx.fillRect(x + 6, y + 10, player.w - 12, 20);
+    ctx.fillStyle = "#222";
+    ctx.fillRect(x + 4, y + 50, 8, 12);
+    ctx.fillRect(x + player.w - 12, y + 50, 8, 12);
 }
 
-function spawnTree(){
-  const side=Math.random()>0.5?-1:1;
-  trees.push({x:canvas.width/2+side*(ROAD_WIDTH/2+20),y:-40});
+function drawEnemy(o) {
+    ctx.fillStyle = o.color;
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.fillStyle = "#222";
+    ctx.fillRect(o.x + 4, o.y + o.h - 12, 8, 10);
+    ctx.fillRect(o.x + o.w - 12, o.y + o.h - 12, 8, 10);
 }
 
-function hit(a,b){
-  return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+function drawTree(t) {
+    ctx.fillStyle = "#5b3a1e";
+    ctx.fillRect(t.x + 6, t.y + 16, 8, 18);
+    ctx.fillStyle = "green";
+    ctx.fillRect(t.x, t.y, 20, 20);
 }
 
-function update(){
-  if(!running) return;
+// ===== SPAWN =====
+function spawnObstacle() {
+    const roadLeft = canvas.width / 2 - ROAD_WIDTH / 2;
+    obstacles.push({
+        w: 40,
+        h: Math.random() > 0.5 ? 60 : 40,
+        x: roadLeft + Math.random() * (ROAD_WIDTH - 40),
+        y: -80,
+        speed: randRange(-2, 4), // relative speed vs player
+        color: rand(trafficColors)
+    });
+}
 
-  distance+=PLAYER_SPEED;
-  dashOffset += PLAYER_SPEED;
-  updateEngine(PLAYER_SPEED);
+function spawnTree() {
+    const side = Math.random() > 0.5 ? -1 : 1;
+    trees.push({
+        x: canvas.width / 2 + side * (ROAD_WIDTH / 2 + 20),
+        y: -40
+    });
+}
 
-  trees.forEach(t=>t.y+=PLAYER_SPEED);
-  obstacles.forEach(o=>o.y+=PLAYER_SPEED-o.speed);
+// ===== COLLISION =====
+function hit(a, b) {
+    return a.x < b.x + b.w &&
+           a.x + a.w > b.x &&
+           a.y < b.y + b.h &&
+           a.y + a.h > b.y;
+}
 
-  trees=trees.filter(t=>t.y<canvas.height+50);
-  obstacles=obstacles.filter(o=>o.y<canvas.height+100);
+// ===== UPDATE =====
+function update() {
+    if (!running) return;
 
-  if(Math.random()<0.06) spawnTree();
-  if(Math.random()<0.03) spawnObstacle();
+    distance += PLAYER_SPEED;
 
-  const l=canvas.width/2-ROAD_WIDTH/2;
-  const r=canvas.width/2+ROAD_WIDTH/2;
-  player.x=Math.max(l,Math.min(r-player.w,player.x));
+    // Move scenery at player speed
+    trees.forEach(t => t.y += PLAYER_SPEED);
 
-  for(let o of obstacles){
-    if(hit(player,o)){
-      running=false;
-      overlay.innerHTML="💥 Crash!<br><br>Tap to restart";
-      overlay.style.display="flex";
+    // Move traffic at relative speeds
+    obstacles.forEach(o => o.y += PLAYER_SPEED - o.speed);
+
+    trees = trees.filter(t => t.y < canvas.height + 50);
+    obstacles = obstacles.filter(o => o.y < canvas.height + 100);
+
+    if (Math.random() < 0.06) spawnTree();
+    if (Math.random() < 0.03) spawnObstacle();
+
+    const roadLeft = canvas.width / 2 - ROAD_WIDTH / 2;
+    const roadRight = canvas.width / 2 + ROAD_WIDTH / 2;
+    player.x = Math.max(roadLeft, Math.min(roadRight - player.w, player.x));
+
+    for (let o of obstacles) {
+        if (hit(player, o)) {
+            running = false;
+            overlay.innerHTML = "💥 Crash!<br><br>Tap to restart";
+            overlay.style.display = "flex";
+        }
     }
-  }
+
+    if (distance >= FINISH_DISTANCE) {
+        running = false;
+        overlay.innerHTML = "🏁 You Win!<br><br>Tap to play again";
+        overlay.style.display = "flex";
+    }
 }
 
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+// ===== DRAW =====
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const roadX=canvas.width/2-ROAD_WIDTH/2;
-  ctx.fillStyle="#555";
-  ctx.fillRect(roadX,0,ROAD_WIDTH,canvas.height);
+    const roadX = canvas.width / 2 - ROAD_WIDTH / 2;
+    ctx.fillStyle = "#555";
+    ctx.fillRect(roadX, 0, ROAD_WIDTH, canvas.height);
 
-  // dashed centerline
-  ctx.strokeStyle="#fff";
-  ctx.setLineDash([20,20]);
-  ctx.lineDashOffset = -dashOffset;
-  ctx.beginPath();
-  ctx.moveTo(canvas.width/2,0);
-  ctx.lineTo(canvas.width/2,canvas.height);
-  ctx.stroke();
-  ctx.setLineDash([]);
+    ctx.setLineDash([20, 20]);
+    ctx.strokeStyle = "#fff";
+    ctx.beginPath();
+    ctx.moveTo(canvas.width / 2, 0);
+    ctx.lineTo(canvas.width / 2, canvas.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-  trees.forEach(t=>{
-    ctx.fillStyle="#5b3a1e";
-    ctx.fillRect(t.x+6,t.y+16,8,18);
-    ctx.fillStyle="green";
-    ctx.fillRect(t.x,t.y,20,20);
-  });
+    trees.forEach(drawTree);
+    obstacles.forEach(drawEnemy);
+    drawPlayer(player.x, player.y);
 
-  obstacles.forEach(o=>{
-    ctx.fillStyle=o.color;
-    ctx.fillRect(o.x,o.y,o.w,o.h);
-  });
-
-  ctx.fillStyle="#1e90ff";
-  ctx.fillRect(player.x,player.y,player.w,player.h);
+    ctx.fillStyle = "white";
+    ctx.font = "16px Arial";
+    ctx.fillText(
+        `Distance: ${Math.min(distance, FINISH_DISTANCE)} / ${FINISH_DISTANCE}`,
+        10, 24
+    );
 }
 
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
+// ===== LOOP =====
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
 loop();
 </script>
+
 </body>
 </html>
