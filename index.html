@@ -42,7 +42,7 @@ canvas { display: block; }
 
 <script>
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js");
+    navigator.serviceWorker.register("sw.js");
 }
 
 const canvas = document.getElementById("game");
@@ -50,8 +50,8 @@ const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 }
 resize();
 window.addEventListener("resize", resize);
@@ -60,113 +60,130 @@ const ROAD_WIDTH = 240;
 const PLAYER_SPEED = 7;
 const FINISH_DISTANCE = 4000;
 
-const player = { w: 42, h: 70, x: 0, y: 0 };
-let running = false, distance = 0, obstacles = [], trees = [], touchX = null;
+const player = { w: 42, h: 70, x: canvas.width / 2, y: canvas.height - 120 };
 
-player.y = canvas.height - 120;
-player.x = canvas.width / 2;
+let running = false;
+let distance = 0;
+let obstacles = [];
+let trees = [];
+let touchX = null;
 
-const colors = ["red","green","orange","purple","gray","white"];
-const rand = a => a[Math.floor(Math.random()*a.length)];
-const r = (a,b)=>a+Math.random()*(b-a);
+const trafficColors = ["red", "green", "orange", "purple", "gray", "white"];
+const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+const randRange = (a, b) => a + Math.random() * (b - a);
 
 overlay.onclick = () => {
-  running = true;
-  distance = 0;
-  obstacles = [];
-  trees = [];
-  player.x = canvas.width/2;
-  overlay.style.display="none";
+    running = true;
+    distance = 0;
+    obstacles = [];
+    trees = [];
+    player.x = canvas.width / 2;
+    overlay.style.display = "none";
 };
 
 canvas.addEventListener("touchstart", e => touchX = e.touches[0].clientX);
 canvas.addEventListener("touchmove", e => {
-  if(!running) return;
-  let dx = e.touches[0].clientX - touchX;
-  player.x += dx*0.8;
-  touchX = e.touches[0].clientX;
+    if (!running) return;
+    let dx = e.touches[0].clientX - touchX;
+    player.x += dx * 0.8;
+    touchX = e.touches[0].clientX;
 });
 
-function spawnObstacle(){
-  const roadLeft = canvas.width/2-ROAD_WIDTH/2;
-  obstacles.push({
-    w:40,h:Math.random()>0.5?60:40,
-    x:roadLeft+Math.random()*(ROAD_WIDTH-40),
-    y:-80,
-    speed:r(-2,4),
-    color:rand(colors)
-  });
+function drawPlayer(x, y) {
+    ctx.fillStyle = "#1e90ff";
+    ctx.fillRect(x, y, player.w, player.h);
+    ctx.fillStyle = "#0b3d91";
+    ctx.fillRect(x + 6, y + 10, player.w - 12, 20);
 }
 
-function spawnTree(){
-  const side=Math.random()>0.5?-1:1;
-  trees.push({
-    x:canvas.width/2+side*(ROAD_WIDTH/2+20),
-    y:-40
-  });
+function drawEnemy(o) {
+    ctx.fillStyle = o.color;
+    ctx.fillRect(o.x, o.y, o.w, o.h);
 }
 
-function hit(a,b){
-  return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+function drawTree(t) {
+    ctx.fillStyle = "#5b3a1e";
+    ctx.fillRect(t.x + 6, t.y + 16, 8, 18);
+    ctx.fillStyle = "green";
+    ctx.fillRect(t.x, t.y, 20, 20);
 }
 
-function drawPlayer(x,y){
-  ctx.fillStyle="#1e90ff";
-  ctx.fillRect(x,y,player.w,player.h);
-  ctx.fillStyle="#0b3d91";
-  ctx.fillRect(x+6,y+10,player.w-12,20);
+function spawnObstacle() {
+    const roadLeft = canvas.width / 2 - ROAD_WIDTH / 2;
+    obstacles.push({
+        w: 40,
+        h: Math.random() > 0.5 ? 60 : 40,
+        x: roadLeft + Math.random() * (ROAD_WIDTH - 40),
+        y: -80,
+        speed: randRange(-2, 4),
+        color: rand(trafficColors)
+    });
 }
 
-function drawEnemy(o){
-  ctx.fillStyle=o.color;
-  ctx.fillRect(o.x,o.y,o.w,o.h);
+function spawnTree() {
+    const side = Math.random() > 0.5 ? -1 : 1;
+    trees.push({
+        x: canvas.width / 2 + side * (ROAD_WIDTH / 2 + 20),
+        y: -40
+    });
 }
 
-function drawTree(t){
-  ctx.fillStyle="#5b3a1e";
-  ctx.fillRect(t.x+6,t.y+16,8,18);
-  ctx.fillStyle="green";
-  ctx.fillRect(t.x,t.y,20,20);
+function hit(a, b) {
+    return a.x < b.x + b.w &&
+           a.x + a.w > b.x &&
+           a.y < b.y + b.h &&
+           a.y + a.h > b.y;
 }
 
-function update(){
-  if(!running) return;
-  distance+=PLAYER_SPEED;
-  trees.forEach(t=>t.y+=PLAYER_SPEED);
-  obstacles.forEach(o=>o.y+=PLAYER_SPEED-o.speed);
-  trees=trees.filter(t=>t.y<canvas.height+50);
-  obstacles=obstacles.filter(o=>o.y<canvas.height+100);
-  if(Math.random()<0.06)spawnTree();
-  if(Math.random()<0.03)spawnObstacle();
-  const l=canvas.width/2-ROAD_WIDTH/2;
-  const rgt=canvas.width/2+ROAD_WIDTH/2;
-  player.x=Math.max(l,Math.min(rgt-player.w,player.x));
-  for(let o of obstacles){
-    if(hit(player,o)){
-      running=false;
-      overlay.innerHTML="💥 Crash!<br><br>Tap to restart";
-      overlay.style.display="flex";
+function update() {
+    if (!running) return;
+
+    distance += PLAYER_SPEED;
+    trees.forEach(t => t.y += PLAYER_SPEED);
+    obstacles.forEach(o => o.y += PLAYER_SPEED - o.speed);
+
+    trees = trees.filter(t => t.y < canvas.height + 50);
+    obstacles = obstacles.filter(o => o.y < canvas.height + 100);
+
+    if (Math.random() < 0.06) spawnTree();
+    if (Math.random() < 0.03) spawnObstacle();
+
+    const roadLeft = canvas.width / 2 - ROAD_WIDTH / 2;
+    const roadRight = canvas.width / 2 + ROAD_WIDTH / 2;
+    player.x = Math.max(roadLeft, Math.min(roadRight - player.w, player.x));
+
+    for (let o of obstacles) {
+        if (hit(player, o)) {
+            running = false;
+            overlay.innerHTML = "💥 Crash!<br><br>Tap to restart";
+            overlay.style.display = "flex";
+        }
     }
-  }
-  if(distance>=FINISH_DISTANCE){
-    running=false;
-    overlay.innerHTML="🏁 You Win!<br><br>Tap to play again";
-    overlay.style.display="flex";
-  }
+
+    if (distance >= FINISH_DISTANCE) {
+        running = false;
+        overlay.innerHTML = "🏁 You Win!<br><br>Tap to play again";
+        overlay.style.display = "flex";
+    }
 }
 
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  const roadX=canvas.width/2-ROAD_WIDTH/2;
-  ctx.fillStyle="#555";
-  ctx.fillRect(roadX,0,ROAD_WIDTH,canvas.height);
-  trees.forEach(drawTree);
-  obstacles.forEach(drawEnemy);
-  drawPlayer(player.x,player.y);
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const roadX = canvas.width / 2 - ROAD_WIDTH / 2;
+    ctx.fillStyle = "#555";
+    ctx.fillRect(roadX, 0, ROAD_WIDTH, canvas.height);
+    trees.forEach(drawTree);
+    obstacles.forEach(drawEnemy);
+    drawPlayer(player.x, player.y);
 }
 
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
 loop();
 </script>
+
 </body>
 </html>
